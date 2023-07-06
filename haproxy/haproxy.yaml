@@ -1,0 +1,151 @@
+apiVersion: /v1
+kind: Service
+metadata:
+  name: haproxy-service
+spec:
+  type: LoadBalancer
+  ports:
+    - name: dashboard
+      port: 8080
+      targetPort: 8080
+    - name: redis-write
+      port: 5120
+      targetPort: 5120
+  selector:
+    app: haproxy
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: haproxy-config
+data:
+  haproxy.cfg: |
+    global
+        daemon
+        maxconn 30000
+        log /dev/log local0
+
+    defaults
+        mode tcp
+        log global
+        log-format "%ci:%cp [%t] %ft %b/%s %Tw/%Tc/%Tt %B %ts %ac/%fc/%bc/%sc/%rc %sq/%bq"
+
+
+    frontend http
+        bind :8080
+        default_backend stats
+
+
+    backend stats
+        mode http
+        stats enable
+        stats uri /
+        stats refresh 1s
+        stats show-legends
+        stats admin if TRUE
+
+    resolvers kube-dns
+      parse-resolv-conf
+      hold other           10s
+      hold refused         10s
+      hold nx              10s
+      hold timeout         10s
+      hold valid           10s
+      hold obsolete        10s
+
+
+    frontend redis-write
+        bind *:5120
+        option tcplog
+        log global
+        log-format "%ci:%cp [%t] %ft %b/%s %Tw/%Tc/%Tt %B %ts %ac/%fc/%bc/%sc/%rc %sq/%bq"
+        default_backend redis-master
+      
+
+    backend redis-master
+        mode tcp
+        balance first
+        option tcp-check
+        tcp-check connect
+        tcp-check send info\ replication\r\n
+        tcp-check expect string role:master
+        tcp-check send QUIT\r\n
+        tcp-check expect string +OK
+        server redis-0 redis-0.redis.default.svc.cluster.local:6379 check inter 1000ms resolvers kube-dns init-addr none on-marked-down shutdown-sessions maxconn 30000
+        server redis-1 redis-1.redis.default.svc.cluster.local:6379 check inter 1000ms resolvers kube-dns init-addr none on-marked-down shutdown-sessions maxconn 30000
+        server redis-2 redis-2.redis.default.svc.cluster.local:6379 check inter 1000ms resolvers kube-dns init-addr none on-marked-down shutdown-sessions maxconn 30000
+
+
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: haproxy-deployment
+  labels:
+    app: haproxy
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: haproxy
+  template:
+    metadata:
+      name: haproxy-pod
+      labels:
+        app: haproxy
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                    - haproxy
+              topologyKey: "kubernetes.io/hostname"
+      containers:
+        - name: haproxy
+          image: haproxy:latest
+          ports:
+            - containerPort: 8080
+            - containerPort: 5120
+          volumeMounts:
+          - name: config
+            mountPath: /usr/local/etc/haproxy/haproxy.cfg
+            subPath: haproxy.cfg
+            readOnly: true
+          - name: log-volume
+            mountPath: /dev/log
+            readOnly: false
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 10
+            failureThreshold: 3
+            successThreshold: 1
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 10
+            failureThreshold: 3
+            successThreshold: 1
+      restartPolicy: Always
+      volumes:
+      - name: config
+        configMap:
+          name: haproxy-config
+      - name: log-volume
+        hostPath:
+          path: /dev/log
