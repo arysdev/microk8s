@@ -9,8 +9,8 @@ spec:
       port: 8080
       targetPort: 8080
     - name: redis-write
-      port: 5120
-      targetPort: 5120
+      port: 6380
+      targetPort: 6380
   selector:
     app: haproxy
 ---
@@ -55,7 +55,7 @@ data:
 
 
     frontend redis-write
-        bind *:5120
+        bind *:6380
         option tcplog
         log global
         log-format "%ci:%cp [%t] %ft %b/%s %Tw/%Tc/%Tt %B %ts %ac/%fc/%bc/%sc/%rc %sq/%bq"
@@ -112,7 +112,7 @@ spec:
           image: haproxy:latest
           ports:
             - containerPort: 8080
-            - containerPort: 5120
+            - containerPort: 6380
           volumeMounts:
           - name: config
             mountPath: /usr/local/etc/haproxy/haproxy.cfg
