@@ -20,8 +20,8 @@ spec:
       targetPort: 443
     - name: redis-haproxy-tcp
       protocol: TCP
-      port: 5120
-      targetPort: 5120
+      port: 6380
+      targetPort: 6380
     - name: sentinel
       protocol: TCP
       port: 5000
