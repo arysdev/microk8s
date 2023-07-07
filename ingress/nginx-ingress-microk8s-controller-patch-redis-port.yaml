@@ -5,8 +5,8 @@ spec:
       - name: nginx-ingress-microk8s
         ports:
          - name: redis-haproxy-tcp
-           containerPort: 5120
-           hostPort: 5120
+           containerPort: 6380
+           hostPort: 6380
          - name: sentinel
            containerPort: 5000
            hostPort: 5000
